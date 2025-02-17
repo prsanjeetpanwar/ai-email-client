@@ -1,9 +1,11 @@
 import React from 'react'
+import { Button } from '~/components/ui/button'
+
 
 const page = () => {
   return (
     <div className='text-blue-300'>
-      hello
+       <Button>Click me</Button>
     </div>
   )
 }
