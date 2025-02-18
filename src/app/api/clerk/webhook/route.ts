@@ -1,7 +1,9 @@
-import { db } from "~/server/db";
+import { PrismaClient } from '@prisma/client';
 import { Webhook } from 'svix';
 import { WebhookEvent } from '@clerk/nextjs/server';
 import { headers } from 'next/headers';
+
+const db = new PrismaClient();
 
 interface UserData {
   id: string;
@@ -13,34 +15,27 @@ interface UserData {
 
 export async function POST(req: Request) {
   try {
-    // Validate environment variable
     if (!process.env.CLERK_WEBHOOK_SECRET) {
       return new Response('CLERK_WEBHOOK_SECRET is not set', { status: 500 });
     }
 
-    // Get the headers
     const headersList = headers();
     const svix_id = headersList.get('svix-id');
     const svix_timestamp = headersList.get('svix-timestamp');
     const svix_signature = headersList.get('svix-signature');
 
-    // If there are no Svix headers, error out
     if (!svix_id || !svix_timestamp || !svix_signature) {
       return new Response('Error: Missing svix headers', { status: 400 });
     }
 
-    // Get the body
     const payload = await req.json();
     const body = JSON.stringify(payload);
 
     console.log('Received webhook payload:', payload);
 
-    // Create a new Svix instance with your webhook secret
     const wh = new Webhook(process.env.CLERK_WEBHOOK_SECRET);
 
     let evt: WebhookEvent;
-
-    // Verify the webhook
     try {
       evt = wh.verify(body, {
         'svix-id': svix_id,
@@ -52,7 +47,6 @@ export async function POST(req: Request) {
       return new Response('Error verifying webhook', { status: 400 });
     }
 
-    // Handle the webhook
     const userData = evt.data as UserData;
     const { id } = userData;
     const eventType = evt.type;
@@ -62,13 +56,11 @@ export async function POST(req: Request) {
 
     if (eventType === 'user.created' || eventType === 'user.updated') {
       try {
-        // Extract email address - use empty string as fallback
         const emailAddress = userData.email_addresses?.[0]?.email_address || '';
         if (!emailAddress) {
           console.warn(`User ${id} has no email address`);
         }
 
-        // Extract other fields with empty string fallbacks
         const firstName = userData.first_name || '';
         const lastName = userData.last_name || '';
         const imageUrl = userData.image_url || '';
@@ -81,7 +73,6 @@ export async function POST(req: Request) {
           imageUrl,
         });
 
-        // Use upsert to handle both creation and updates
         await db.user.upsert({
           where: { id },
           update: {
