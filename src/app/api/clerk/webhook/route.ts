@@ -3,8 +3,21 @@ import { Webhook } from 'svix';
 import { WebhookEvent } from '@clerk/nextjs/server';
 import { headers } from 'next/headers';
 
+interface UserData {
+  id: string;
+  email_addresses: { email_address: string }[];
+  first_name?: string;
+  last_name?: string;
+  image_url?: string;
+}
+
 export async function POST(req: Request) {
   try {
+    // Validate environment variable
+    if (!process.env.CLERK_WEBHOOK_SECRET) {
+      return new Response('CLERK_WEBHOOK_SECRET is not set', { status: 500 });
+    }
+
     // Get the headers
     const headersList = headers();
     const svix_id = headersList.get('svix-id');
@@ -20,8 +33,10 @@ export async function POST(req: Request) {
     const payload = await req.json();
     const body = JSON.stringify(payload);
 
+    console.log('Received webhook payload:', payload);
+
     // Create a new Svix instance with your webhook secret
-    const wh = new Webhook(process.env.CLERK_WEBHOOK_SECRET || '');
+    const wh = new Webhook(process.env.CLERK_WEBHOOK_SECRET);
 
     let evt: WebhookEvent;
 
@@ -38,10 +53,10 @@ export async function POST(req: Request) {
     }
 
     // Handle the webhook
-    const userData = evt.data;
+    const userData = evt.data as UserData;
     const { id } = userData;
     const eventType = evt.type;
-    
+
     console.log(`Webhook with ID: ${id} and type: ${eventType}`);
     console.log('Webhook data:', userData);
 
@@ -52,7 +67,7 @@ export async function POST(req: Request) {
         if (!emailAddress) {
           console.warn(`User ${id} has no email address`);
         }
-        
+
         // Extract other fields with empty string fallbacks
         const firstName = userData.first_name || '';
         const lastName = userData.last_name || '';
@@ -63,7 +78,7 @@ export async function POST(req: Request) {
           emailAddress,
           firstName,
           lastName,
-          imageUrl
+          imageUrl,
         });
 
         // Use upsert to handle both creation and updates
