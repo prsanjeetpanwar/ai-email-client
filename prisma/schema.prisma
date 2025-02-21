@@ -17,12 +17,26 @@ model Post {
 }
 
 model User {
- id           String @id @default(cuid())
-  emailAddress String @unique
+  id           String    @id @default(cuid())
+  emailAddress String    @unique
   firstName    String
   lastName     String
   imageUrl     String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  account      Account[]
 }
 
+model Account {
+  id           String @id @default(cuid())
+  userId       String
+  accessToken  String @unique
+  emailAddress String
+  name         String
+  user         User   @relation(fields: [userId], references: [id])
+}
+
+model New {
+  id String @id  @default(cuid())
+  name String
+}
