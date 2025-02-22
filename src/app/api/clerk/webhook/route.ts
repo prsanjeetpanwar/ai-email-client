@@ -2,12 +2,13 @@ import { db } from "~/server/db"
 
 export const POST =async (req:Request)=>{
   const {data}=await req.json()
- console.log('data',data)
- const id = data?.id;
- const emailAddress = data?.emailAddresses?.[0]?.emailAddress || "No Email"; // ✅ Safe access
- const firstName = data?.firstName 
- const lastName = data?.lastName 
- const imageUrl = data?.imageUrl 
+ console.log('clerk webhook data',data)
+//  const id = data?.id;
+ const emailAddress = data.emailAddresses?.[0]?.emailAddress 
+ const firstName = data.firstName 
+ const lastName = data.lastName 
+ const imageUrl = data.imageUrl 
+ const id =data.id
 
  await db.user.create({
     data:{

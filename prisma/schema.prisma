@@ -28,15 +28,19 @@ model User {
 }
 
 model Account {
-  id           String @id @default(cuid())
-  userId       String
-  accessToken  String @unique
-  emailAddress String
-  name         String
-  user         User   @relation(fields: [userId], references: [id])
+  id             String   @id @default(cuid())
+  userId         String
+  accessToken    String   @unique
+  emailAddress   String
+  name           String
+  createdAt      DateTime @default(now())
+  provider       String
+  binaryIndex    Json?
+  nextDeltaToken String?
+  user           User     @relation(fields: [userId], references: [id])
 }
 
 model New {
-  id String @id  @default(cuid())
+  id   String @id @default(cuid())
   name String
 }
