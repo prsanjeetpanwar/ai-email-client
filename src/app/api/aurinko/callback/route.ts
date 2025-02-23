@@ -71,12 +71,14 @@ export const GET = async (req: NextRequest) => {
           userId,
           emailAddress: accountDetails?.email,
           name: accountDetails?.name,
+          provider: 'Aurinko',
           accessToken: token.accessToken,
         }, 
         create: {
           id: token.accountId.toString(),
           userId,
           emailAddress: accountDetails?.email,
+          provider: 'Aurinko',
           name: accountDetails?.name,
           accessToken: token.accessToken,
         }, 
@@ -95,11 +97,12 @@ export const GET = async (req: NextRequest) => {
         accountId:token.accountId.toString(),
         userId
       }).then((res)=>{
-console.log(res.data)
-      }).catch((res)=>{
-        console.log(res.data)
+console.log('initial sync is triggered',res.data)
+      }).catch((error)=>{
+        console.log('failed to trigger initial sync',error)
       })
     )
+    
     return NextResponse.redirect(new URL("/mail", req.url));
   } catch (error) {
     console.error("❌ Unexpected error in GET handler:", error);

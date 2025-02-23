@@ -3,92 +3,127 @@ import { EmailMessage, SyncResponse, SyncUpdatedResponse } from "~/types/types";
 
 export class Account {
     private token: string;
+    private readonly baseUrl = 'https://api.aurinko.io/v1';
 
     constructor(token: string) {
         this.token = token;
     }
 
+    private async makeRequest<T>(endpoint: string, method: 'GET' | 'POST' = 'GET', data: any = null, params: Record<string, any> = {}) {
+        try {
+            const config = {
+                method,
+                url: `${this.baseUrl}${endpoint}`,
+                headers: {
+                    'Authorization': `Bearer ${this.token}`,
+                    'Content-Type': 'application/json'
+                },
+                params,
+                data: method === 'POST' ? data : undefined
+            };
+
+            console.log(`🔄 Making ${method} request to ${endpoint}`, { params });
+            const response = await axios(config);
+            return response.data as T;
+        } catch (error) {
+            if (axios.isAxiosError(error)) {
+                const errorDetails = error.response?.data;
+                console.error(`❌ API Error for ${endpoint}:`, {
+                    status: error.response?.status,
+                    data: errorDetails,
+                    config: {
+                        url: error.config?.url,
+                        method: error.config?.method,
+                        params: error.config?.params
+                    }
+                });
+
+                // Check if we need to refresh token or re-authenticate
+                if (error.response?.status === 401) {
+                    throw new Error('Authentication token expired or invalid');
+                }
+            }
+            throw error;
+        }
+    }
+
     private async startSync(): Promise<SyncResponse> {
-        try {
-            const response = await axios.post<SyncResponse>(
-                "https://api.aurinko.io/v1/email/sync",
-                {},
-                {
-                    headers: {
-                        Authorization: `Bearer ${this.token}`,
-                    },
-                    params: {
-                        dayWithin: 2,
-                        bodyType: "html",
-                    },
-                }
-            );
-            return response.data;
-        } catch (error: any) {
-            console.error("Sync failed:", error.message);
-            throw error;
-        }
+        console.log('📧 Starting email sync process');
+        return this.makeRequest<SyncResponse>('/email/sync', 'POST', {}, {
+            daysWithin: 2,
+            bodyType: 'html',
+            serviceType: 'Gmail'  // Explicitly specify Gmail as service type
+        });
     }
 
-    async getUpdateEmails({ deltaToken, pageToken }: { deltaToken?: string; pageToken?: string }) {
-        try {
-            const params: Record<string, string> = {};
-            if (deltaToken) params.deltaToken = deltaToken;
-            if (pageToken) params.pageToken = pageToken;
+    async getUpdatedEmails({ deltaToken, pageToken }: { deltaToken?: string; pageToken?: string; }): Promise<SyncUpdatedResponse> {
+        const params: Record<string, string> = {};
+        if (deltaToken) params.deltaToken = deltaToken;
+        if (pageToken) params.syncToken = pageToken;
 
-            const response = await axios.get<SyncUpdatedResponse>(
-                "https://api.aurinko.io/v1/email/updated",
-                {
-                    headers: {
-                        Authorization: `Bearer ${this.token}`,
-                    },
-                    params,
-                }
-            );
-            return response.data;
-        } catch (error: any) {
-            console.error("Failed to fetch updated emails:", error.message);
-            throw error;
-        }
+        return this.makeRequest<SyncUpdatedResponse>('/email/sync/updated', 'GET', null, params);
     }
 
-    async performInitialSync(): Promise<{ emails: EmailMessage[]; deltaToken: string } | null> {
+    async performInitialSync() {
         try {
+            console.log('🚀 Starting initial sync process');
+
+            // First, verify account access
+            await this.makeRequest('/account');
+            console.log('✅ Account access verified');
+
             let syncResponse = await this.startSync();
+            console.log('📥 Initial sync response:', { ready: syncResponse.ready });
 
-            while (!syncResponse.ready) {
-                await new Promise((resolve) => setTimeout(resolve, 1000));
-                syncResponse = await this.startSync(); // Re-fetch sync status
+            // Wait for sync to be ready
+            let attempts = 0;
+            const maxAttempts = 10;
+            while (!syncResponse.ready && attempts < maxAttempts) {
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                syncResponse = await this.startSync();
+                attempts++;
+                console.log(`🔄 Waiting for sync to be ready (attempt ${attempts}/${maxAttempts})`);
             }
 
-            let storedDeltaToken: string = syncResponse.syncDeletedToken;
-            let updateResponse = await this.getUpdateEmails({ deltaToken: storedDeltaToken });
-
-            if (updateResponse.nextDeltaToken) {
-                storedDeltaToken = updateResponse.nextDeltaToken;
+            if (!syncResponse.ready) {
+                throw new Error('Sync failed to become ready after maximum attempts');
             }
+
+            let storedDeltaToken = syncResponse.syncUpdatedToken;
+            let updateResponse = await this.getUpdatedEmails({ deltaToken: storedDeltaToken });
+            console.log('📨 Retrieved first batch of emails');
 
             let allEmails: EmailMessage[] = updateResponse.records;
 
-            // Fetch all pages if more exist
+            // Paginate through all results
             while (updateResponse.nextPageToken) {
-                updateResponse = await this.getUpdateEmails({ pageToken: updateResponse.nextPageToken });
+                console.log('📑 Fetching next page of emails');
+                updateResponse = await this.getUpdatedEmails({ pageToken: updateResponse.nextPageToken });
                 allEmails = allEmails.concat(updateResponse.records);
-
+                
                 if (updateResponse.nextDeltaToken) {
                     storedDeltaToken = updateResponse.nextDeltaToken;
                 }
             }
 
-            console.log(`Initial sync completed. Synced ${allEmails.length} emails.`);
+            console.log(`✅ Initial sync completed with ${allEmails.length} emails`);
 
             return {
                 emails: allEmails,
-                deltaToken: storedDeltaToken,
+                deltaToken: storedDeltaToken
             };
-        } catch (err: any) {
-            console.error("Initial sync failed:", err.message);
-            return null;
+
+        } catch (err) {
+            if (axios.isAxiosError(err)) {
+                const errorDetails = err.response?.data;
+                console.error('❌ Sync error:', {
+                    status: err.response?.status,
+                    message: errorDetails?.message,
+                    originalError: errorDetails?.originalError,
+                    requestId: errorDetails?.requestId
+                });
+            }
+            throw err;
         }
     }
 }
